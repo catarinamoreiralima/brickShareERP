@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, useRef, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -89,6 +89,7 @@ type View =
 
 type ProjectStatus =
   | "Em análise"
+  | "Documentação"
   | "Aprovado"
   | "Captação"
   | "Monitoramento"
@@ -114,6 +115,14 @@ type Project = {
   lastWorkUpdate: string;
   approvalDays: number;
   raised: number;
+};
+
+type EvidenceImage = {
+  title: string;
+  category: string;
+  date: string;
+  status: string;
+  src: string;
 };
 
 const workflow = [
@@ -157,9 +166,9 @@ const projects: Project[] = [
     location: "Curitiba, PR",
     enterpriseType: "Uso misto",
     stage: "Captação",
-    completion: 12,
-    nextInspection: "25/07/2026",
-    lastWorkUpdate: "30/06/2026",
+    completion: 0,
+    nextInspection: "A definir",
+    lastWorkUpdate: "Sem obra",
     approvalDays: 28,
     raised: 7600000,
   },
@@ -259,7 +268,7 @@ const projects: Project[] = [
     company: "Ipê Urbanismo",
     category: "Residencial",
     requestedValue: 6100000,
-    status: "Documentação" as ProjectStatus,
+    status: "Documentação",
     owner: "Bianca Nunes",
     updatedAt: "25/06/2026",
     location: "Sorocaba, SP",
@@ -283,9 +292,9 @@ const projects: Project[] = [
     location: "Porto Alegre, RS",
     enterpriseType: "Strip mall",
     stage: "Captação",
-    completion: 6,
-    nextInspection: "22/07/2026",
-    lastWorkUpdate: "23/06/2026",
+    completion: 0,
+    nextInspection: "A definir",
+    lastWorkUpdate: "Sem obra",
     approvalDays: 31,
     raised: 4100000,
   },
@@ -373,9 +382,9 @@ const projects: Project[] = [
     location: "Florianópolis, SC",
     enterpriseType: "Clínicas modulares",
     stage: "Captação",
-    completion: 9,
-    nextInspection: "30/07/2026",
-    lastWorkUpdate: "18/06/2026",
+    completion: 0,
+    nextInspection: "A definir",
+    lastWorkUpdate: "Sem obra",
     approvalDays: 29,
     raised: 9800000,
   },
@@ -517,13 +526,7 @@ const monitoringEvents = [
 const projectEvidence: Record<
   number,
   {
-    images: {
-      title: string;
-      category: string;
-      date: string;
-      status: string;
-      src: string;
-    }[];
+    images: EvidenceImage[];
   }
 > = {
   1: {
@@ -662,6 +665,16 @@ function getEstimatedProgress(project: Project) {
   return { estimated, variance, status, forecast };
 }
 
+function getCaptureProgress(project: Project) {
+  const capturedPercent = project.requestedValue === 0 ? 0 : Math.round((project.raised / project.requestedValue) * 100);
+  const remainingValue = Math.max(0, project.requestedValue - project.raised);
+  const remainingPercent = Math.max(0, 100 - capturedPercent);
+  const status = capturedPercent >= 100 ? "No prazo" : capturedPercent >= 60 ? "Em atenção" : "Em análise";
+  const forecast = capturedPercent >= 100 ? "Concluída" : project.status === "Captação" ? "Ago/2026" : "Aguardando aprovação";
+
+  return { capturedPercent, remainingPercent, remainingValue, status, forecast };
+}
+
 function countBy<T extends string>(items: T[]) {
   return items.reduce<Record<string, number>>((acc, item) => {
     acc[item] = (acc[item] || 0) + 1;
@@ -706,6 +719,8 @@ function MiniMetric({
 }
 
 function App() {
+  const [projectList, setProjectList] = useState<Project[]>(projects);
+  const [uploadedEvidence, setUploadedEvidence] = useState<Record<number, EvidenceImage[]>>({});
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [selectedProject, setSelectedProject] = useState<Project>(projects[0]);
   const [query, setQuery] = useState("");
@@ -713,12 +728,12 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState("Todas");
   const [ownerFilter, setOwnerFilter] = useState("Todos");
 
-  const categories = useMemo(() => Array.from(new Set(projects.map((project) => project.category))), []);
-  const owners = useMemo(() => Array.from(new Set(projects.map((project) => project.owner))), []);
-  const projectStatuses = useMemo(() => Array.from(new Set(projects.map((project) => project.status))), []);
+  const categories = useMemo(() => Array.from(new Set(projectList.map((project) => project.category))), [projectList]);
+  const owners = useMemo(() => Array.from(new Set(projectList.map((project) => project.owner))), [projectList]);
+  const projectStatuses = useMemo(() => Array.from(new Set(projectList.map((project) => project.status))), [projectList]);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter((project) => {
+    return projectList.filter((project) => {
       const matchesQuery = `${project.name} ${project.company} ${project.location}`
         .toLowerCase()
         .includes(query.toLowerCase());
@@ -727,32 +742,61 @@ function App() {
       const matchesOwner = ownerFilter === "Todos" || project.owner === ownerFilter;
       return matchesQuery && matchesStatus && matchesCategory && matchesOwner;
     });
-  }, [categoryFilter, ownerFilter, query, statusFilter]);
+  }, [categoryFilter, ownerFilter, projectList, query, statusFilter]);
 
   const statusData = useMemo(
     () =>
-      Object.entries(countBy(projects.map((project) => project.status))).map(([name, value]) => ({
+      Object.entries(countBy(projectList.map((project) => project.status))).map(([name, value]) => ({
         name,
         value,
       })),
-    [],
+    [projectList],
   );
 
   const categoryData = useMemo(
     () =>
-      Object.entries(countBy(projects.map((project) => project.category))).map(([name, value]) => ({
+      Object.entries(countBy(projectList.map((project) => project.category))).map(([name, value]) => ({
         name,
         value,
       })),
-    [],
+    [projectList],
   );
 
-  const avgApproval = Math.round(projects.reduce((sum, project) => sum + project.approvalDays, 0) / projects.length);
+  const avgApproval = Math.round(projectList.reduce((sum, project) => sum + project.approvalDays, 0) / projectList.length);
   const pendingDocuments = documents.filter((document) => document.status === "Pendente").length;
 
   function openProject(project: Project, view: View = "projects") {
     setSelectedProject(project);
     setActiveView(view);
+  }
+
+  function createProject(project: Omit<Project, "id">) {
+    const newProject = {
+      ...project,
+      id: Math.max(...projectList.map((item) => item.id)) + 1,
+    };
+
+    setProjectList((currentProjects) => [newProject, ...currentProjects]);
+    setSelectedProject(newProject);
+    setQuery("");
+    setStatusFilter("Todos");
+    setCategoryFilter("Todas");
+    setOwnerFilter("Todos");
+  }
+
+  function uploadEvidence(projectId: number, file: File, title: string) {
+    const image: EvidenceImage = {
+      title: title.trim() || file.name.replace(/\.[^/.]+$/, "") || "Nova evidência",
+      category: "Atualização",
+      date: "03/07/2026",
+      status: "Pendente de revisão",
+      src: URL.createObjectURL(file),
+    };
+
+    setUploadedEvidence((currentEvidence) => ({
+      ...currentEvidence,
+      [projectId]: [image, ...(currentEvidence[projectId] || [])],
+    }));
   }
 
   return (
@@ -846,6 +890,7 @@ function App() {
           {activeView === "dashboard" && (
             <Dashboard
               avgApproval={avgApproval}
+              projects={projectList}
               statusData={statusData}
               onOpenProjects={(status) => {
                 setStatusFilter(status);
@@ -868,16 +913,24 @@ function App() {
               categoryFilter={categoryFilter}
               ownerFilter={ownerFilter}
               openProject={openProject}
+              onCreateProject={createProject}
               selectedProject={selectedProject}
             />
           )}
           {activeView === "documents" && <DocumentsView selectedProject={selectedProject} pendingDocuments={pendingDocuments} />}
-          {activeView === "monitoring" && <MonitoringView selectedProject={selectedProject} />}
+          {activeView === "monitoring" && (
+            <MonitoringView
+              selectedProject={selectedProject}
+              uploadedEvidence={uploadedEvidence[selectedProject.id] || []}
+              onUploadEvidence={uploadEvidence}
+            />
+          )}
           {activeView === "reports" && (
             <ReportsView
               avgApproval={avgApproval}
               categoryData={categoryData}
               pendingDocuments={pendingDocuments}
+              projects={projectList}
               statusData={statusData}
             />
           )}
@@ -891,10 +944,12 @@ function App() {
 
 function Dashboard({
   avgApproval,
+  projects,
   statusData,
   onOpenProjects,
 }: {
   avgApproval: number;
+  projects: Project[];
   statusData: { name: string; value: number }[];
   onOpenProjects: (status: string) => void;
 }) {
@@ -926,7 +981,7 @@ function Dashboard({
                     <Cell key={index} fill={chartColors[index % chartColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value) => (showCaptureProgress ? formatCurrency(Number(value)) : `${value}%`)} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -1020,6 +1075,7 @@ function ProjectsView({
   categoryFilter,
   ownerFilter,
   openProject,
+  onCreateProject,
   selectedProject,
 }: {
   categories: string[];
@@ -1035,6 +1091,7 @@ function ProjectsView({
   categoryFilter: string;
   ownerFilter: string;
   openProject: (project: Project, view?: View) => void;
+  onCreateProject: (project: Omit<Project, "id">) => void;
   selectedProject: Project;
 }) {
   return (
@@ -1046,10 +1103,7 @@ function ProjectsView({
               <h2 className="text-lg font-semibold">Lista de projetos</h2>
               <p className="text-sm text-slate-500">{filteredProjects.length} projetos encontrados na carteira</p>
             </div>
-            <Button>
-              <Plus className="size-4" />
-              Novo Projeto
-            </Button>
+            <NewProjectDialog categories={categories} owners={owners} onCreateProject={onCreateProject} />
           </div>
 
           <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
@@ -1079,7 +1133,11 @@ function ProjectsView({
               </TableHeader>
               <TableBody>
                 {filteredProjects.map((project) => (
-                  <TableRow key={project.id} className="cursor-pointer" onClick={() => openProject(project, "monitoring")}>
+                  <TableRow
+                    key={project.id}
+                    className={`cursor-pointer ${selectedProject.id === project.id ? "bg-blue-50/70 hover:bg-blue-50" : ""}`}
+                    onClick={() => openProject(project)}
+                  >
                     <TableCell className="pl-4 font-medium">{project.name}</TableCell>
                     <TableCell>{project.company}</TableCell>
                     <TableCell>{project.category}</TableCell>
@@ -1097,7 +1155,7 @@ function ProjectsView({
         </Card>
       </section>
 
-      <ProjectDetails project={selectedProject} />
+      <ProjectDetails project={selectedProject} onOpenMonitoring={() => openProject(selectedProject, "monitoring")} />
     </div>
   );
 }
@@ -1130,7 +1188,156 @@ function FilterSelect({
   );
 }
 
-function ProjectDetails({ project }: { project: Project }) {
+function NewProjectDialog({
+  categories,
+  owners,
+  onCreateProject,
+}: {
+  categories: string[];
+  owners: string[];
+  onCreateProject: (project: Omit<Project, "id">) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [category, setCategory] = useState(categories[0] || "Residencial");
+  const [requestedValue, setRequestedValue] = useState("");
+  const [status, setStatus] = useState<ProjectStatus>("Em análise");
+  const [owner, setOwner] = useState(owners[0] || "Marina Costa");
+  const [location, setLocation] = useState("");
+  const [enterpriseType, setEnterpriseType] = useState("");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const parsedValue = Number(requestedValue.replace(/\D/g, ""));
+
+    onCreateProject({
+      name,
+      company,
+      category,
+      requestedValue: parsedValue || 0,
+      status,
+      owner,
+      updatedAt: "02/07/2026",
+      location,
+      enterpriseType,
+      stage: status === "Documentação" ? "Documentação" : status === "Jurídico" ? "Jurídico" : status === "Aprovado" ? "Aprovado" : status === "Captação" ? "Captação" : status === "Monitoramento" || status === "Atrasado" ? "Monitoramento" : "Análise Financeira",
+      completion: status === "Monitoramento" || status === "Atrasado" ? 18 : 0,
+      nextInspection: status === "Monitoramento" || status === "Atrasado" ? "30/07/2026" : "A definir",
+      lastWorkUpdate: status === "Monitoramento" || status === "Atrasado" ? "02/07/2026" : "Sem obra",
+      approvalDays: 1,
+      raised: 0,
+    });
+
+    setName("");
+    setCompany("");
+    setRequestedValue("");
+    setLocation("");
+    setEnterpriseType("");
+    setStatus("Em análise");
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="size-4" />
+          Novo Projeto
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Novo Projeto</DialogTitle>
+          <DialogDescription>Cadastre um projeto mockado para análise no ERP.</DialogDescription>
+        </DialogHeader>
+
+        <form className="grid gap-4" onSubmit={handleSubmit}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm">Nome do projeto</label>
+              <Input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Ex: Residencial Horizonte" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Empresa</label>
+              <Input value={company} onChange={(event) => setCompany(event.target.value)} required placeholder="Ex: Horizonte SPE Ltda." />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Categoria</label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(new Set([...categories, "Residencial", "Comercial", "Misto", "Logístico"])).map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Valor solicitado</label>
+              <Input value={requestedValue} onChange={(event) => setRequestedValue(event.target.value)} required placeholder="Ex: 8500000" inputMode="numeric" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Status</label>
+              <Select value={status} onValueChange={(value) => setStatus(value as ProjectStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["Em análise", "Documentação", "Jurídico", "Aprovado", "Captação", "Monitoramento", "Atrasado"].map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Responsável</label>
+              <Select value={owner} onValueChange={setOwner}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {owners.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Localização</label>
+              <Input value={location} onChange={(event) => setLocation(event.target.value)} required placeholder="Ex: São Paulo, SP" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">Tipo do empreendimento</label>
+              <Input value={enterpriseType} onChange={(event) => setEnterpriseType(event.target.value)} required placeholder="Ex: Condomínio vertical" />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit">
+              <Plus className="size-4" />
+              Criar projeto
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProjectDetails({ project, onOpenMonitoring }: { project: Project; onOpenMonitoring: () => void }) {
   const currentIndex = workflow.indexOf(project.stage);
 
   return (
@@ -1173,6 +1380,11 @@ function ProjectDetails({ project }: { project: Project }) {
               })}
             </div>
           </div>
+
+          <Button className="w-full" onClick={onOpenMonitoring}>
+            <Building2 className="size-4" />
+            Ver monitoramento
+          </Button>
 
           <div className="grid gap-2 sm:grid-cols-3">
             <Button size="sm">
@@ -1259,20 +1471,63 @@ function DocumentsView({ selectedProject, pendingDocuments }: { selectedProject:
   );
 }
 
-function MonitoringView({ selectedProject }: { selectedProject: Project }) {
+function MonitoringView({
+  selectedProject,
+  uploadedEvidence,
+  onUploadEvidence,
+}: {
+  selectedProject: Project;
+  uploadedEvidence: EvidenceImage[];
+  onUploadEvidence: (projectId: number, file: File, title: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingTitle, setPendingTitle] = useState("");
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const hasConstructionStarted = selectedProject.status === "Monitoramento" || selectedProject.status === "Atrasado";
+  const showCaptureProgress = !hasConstructionStarted;
   const estimatedProgress = getEstimatedProgress(selectedProject);
-  const evidence = projectEvidence[selectedProject.id]?.images || [];
-  const progressChart = constructionProgress.map((point) => ({
-    ...point,
-    realizado:
-      selectedProject.completion === 0
-        ? 0
-        : Math.max(0, Math.round(point.realizado * (selectedProject.completion / 74))),
-    estimado:
-      estimatedProgress.estimated === 0
-        ? 0
-        : Math.max(0, Math.round(point.estimado * (estimatedProgress.estimated / 78))),
-  }));
+  const captureProgress = getCaptureProgress(selectedProject);
+  const evidence = [...uploadedEvidence, ...(projectEvidence[selectedProject.id]?.images || [])];
+  const progressChart = showCaptureProgress
+    ? captureEvolution.map((point) => ({
+        month: point.month,
+        captado: Math.min(selectedProject.raised, Math.round((point.value / 54) * selectedProject.raised)),
+        meta: Math.min(selectedProject.requestedValue, Math.round((point.value / 54) * selectedProject.requestedValue)),
+      }))
+    : constructionProgress.map((point) => ({
+        ...point,
+        realizado:
+          selectedProject.completion === 0
+            ? 0
+            : Math.max(0, Math.round(point.realizado * (selectedProject.completion / 74))),
+        estimado:
+          estimatedProgress.estimated === 0
+            ? 0
+            : Math.max(0, Math.round(point.estimado * (estimatedProgress.estimated / 78))),
+      }));
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    setPendingFile(file);
+    setPendingTitle(file.name.replace(/\.[^/.]+$/, ""));
+    setIsUploadDialogOpen(true);
+    event.target.value = "";
+  }
+
+  function handleConfirmUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!pendingFile) return;
+
+    onUploadEvidence(selectedProject.id, pendingFile, pendingTitle);
+    setPendingFile(null);
+    setPendingTitle("");
+    setIsUploadDialogOpen(false);
+  }
 
   return (
     <div className="space-y-5">
@@ -1281,50 +1536,102 @@ function MonitoringView({ selectedProject }: { selectedProject: Project }) {
           <h2 className="text-lg font-semibold">Monitoramento da obra</h2>
           <p className="text-sm text-slate-500">{selectedProject.name} - {selectedProject.location}</p>
         </div>
-        <Button>
-          <Plus className="size-4" />
-          Adicionar atualização
-        </Button>
+        {!showCaptureProgress && (
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button onClick={() => fileInputRef.current?.click()}>
+              <Plus className="size-4" />
+              Adicionar atualização
+            </Button>
+            <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Nomear atualização</DialogTitle>
+                  <DialogDescription>
+                    Defina como essa imagem aparecerá nas evidências da obra.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={handleConfirmUpload}>
+                  <div className="space-y-2">
+                    <label className="text-sm">Nome da atualização</label>
+                    <Input
+                      value={pendingTitle}
+                      onChange={(event) => setPendingTitle(event.target.value)}
+                      placeholder="Ex: Vistoria da fachada - Julho"
+                      autoFocus
+                    />
+                  </div>
+                  {pendingFile && (
+                    <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">
+                      Arquivo selecionado: <span className="font-medium text-slate-700">{pendingFile.name}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setPendingFile(null);
+                        setPendingTitle("");
+                        setIsUploadDialogOpen(false);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit">Adicionar</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Percentual concluído</CardTitle>
+            <CardTitle>{showCaptureProgress ? "Valor captado" : "Percentual concluído"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold">{selectedProject.completion}%</div>
-            <Progress value={selectedProject.completion} className="mt-4" />
+            <div className="text-3xl font-semibold">{showCaptureProgress ? formatCurrency(selectedProject.raised) : `${selectedProject.completion}%`}</div>
+            <Progress value={showCaptureProgress ? captureProgress.capturedPercent : selectedProject.completion} className="mt-4" />
+            {showCaptureProgress && <div className="mt-2 text-xs text-slate-500">{captureProgress.capturedPercent}% da meta captado</div>}
           </CardContent>
         </Card>
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Progresso estimado</CardTitle>
+            <CardTitle>{showCaptureProgress ? "Meta de captação" : "Progresso estimado"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold">{estimatedProgress.estimated}%</div>
-            <Progress value={estimatedProgress.estimated} className="mt-4 bg-slate-200" />
+            <div className="text-3xl font-semibold">{showCaptureProgress ? formatCurrency(selectedProject.requestedValue) : `${estimatedProgress.estimated}%`}</div>
+            <Progress value={showCaptureProgress ? 100 : estimatedProgress.estimated} className="mt-4 bg-slate-200" />
           </CardContent>
         </Card>
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Desvio do cronograma</CardTitle>
+            <CardTitle>{showCaptureProgress ? "Falta captar" : "Desvio do cronograma"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={estimatedProgress.variance < 0 ? "text-4xl font-semibold text-red-600" : "text-4xl font-semibold text-emerald-600"}>
-              {estimatedProgress.variance > 0 ? "+" : ""}
-              {estimatedProgress.variance} p.p.
+            <div className={showCaptureProgress ? "text-4xl font-semibold text-blue-700" : estimatedProgress.variance < 0 ? "text-4xl font-semibold text-red-600" : "text-4xl font-semibold text-emerald-600"}>
+              {showCaptureProgress ? formatCurrency(captureProgress.remainingValue) : `${estimatedProgress.variance > 0 ? "+" : ""}${estimatedProgress.variance} p.p.`}
             </div>
-            <StatusBadge status={estimatedProgress.status} />
+            <StatusBadge status={showCaptureProgress ? captureProgress.status : estimatedProgress.status} />
+            {showCaptureProgress && <div className="mt-2 text-xs text-slate-500">{captureProgress.remainingPercent}% restante</div>}
           </CardContent>
         </Card>
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Conclusão estimada</CardTitle>
+            <CardTitle>{showCaptureProgress ? "Encerramento previsto" : "Conclusão estimada"}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3">
             <CalendarDays className="size-5 text-blue-700" />
-            <span className="font-medium">{estimatedProgress.forecast}</span>
+            <span className="font-medium">{showCaptureProgress ? captureProgress.forecast : estimatedProgress.forecast}</span>
           </CardContent>
         </Card>
       </div>
@@ -1350,99 +1657,123 @@ function MonitoringView({ selectedProject }: { selectedProject: Project }) {
         </Card>
       </div>
 
-      <Card className="rounded-lg">
-        <CardHeader>
-          <CardTitle>Evidências da obra</CardTitle>
-          <CardDescription>
-            {evidence.length > 0
-              ? "Imagens mockadas do projeto selecionado"
-              : "Nenhuma imagem mockada cadastrada para este projeto"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {evidence.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              {evidence.map((image) => (
-                <Dialog key={image.src}>
-                  <DialogTrigger asChild>
-                    <button type="button" className="overflow-hidden rounded-lg border bg-white text-left transition hover:border-blue-300 hover:shadow-sm">
-                      <div className="aspect-[4/3] bg-slate-100">
-                        <ImageWithFallback src={image.src} alt={image.title} className="h-full w-full object-cover" />
-                      </div>
-                      <div className="space-y-2 p-3">
-                        <div className="font-medium">{image.title}</div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">{image.category}</Badge>
-                          <StatusBadge status={image.status} />
+      {hasConstructionStarted && (
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle>Evidências da obra</CardTitle>
+            <CardDescription>
+              {evidence.length > 0
+                ? "Imagens mockadas do projeto selecionado"
+                : "Nenhuma imagem mockada cadastrada para este projeto"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {evidence.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                {evidence.map((image) => (
+                  <Dialog key={image.src}>
+                    <DialogTrigger asChild>
+                      <button type="button" className="overflow-hidden rounded-lg border bg-white text-left transition hover:border-blue-300 hover:shadow-sm">
+                        <div className="aspect-[4/3] bg-slate-100">
+                          <ImageWithFallback src={image.src} alt={image.title} className="h-full w-full object-cover" />
                         </div>
-                        <div className="text-xs text-slate-500">{image.date}</div>
+                        <div className="space-y-2 p-3">
+                          <div className="font-medium">{image.title}</div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="outline">{image.category}</Badge>
+                            <StatusBadge status={image.status} />
+                          </div>
+                          <div className="text-xs text-slate-500">{image.date}</div>
+                        </div>
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-5xl">
+                      <DialogHeader>
+                        <DialogTitle>{image.title}</DialogTitle>
+                        <DialogDescription>
+                          {image.category} - {image.date} - {image.status}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="overflow-hidden rounded-lg border bg-slate-100">
+                        <ImageWithFallback src={image.src} alt={image.title} className="max-h-[70vh] w-full object-contain" />
                       </div>
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-5xl">
-                    <DialogHeader>
-                      <DialogTitle>{image.title}</DialogTitle>
-                      <DialogDescription>
-                        {image.category} - {image.date} - {image.status}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="overflow-hidden rounded-lg border bg-slate-100">
-                      <ImageWithFallback src={image.src} alt={image.title} className="max-h-[70vh] w-full object-contain" />
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-slate-500">
-              Para exibir imagens aqui, cadastre evidências em <span className="font-medium text-slate-700">projectEvidence</span> e coloque os arquivos em <span className="font-medium text-slate-700">public/mock/</span>.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    </DialogContent>
+                  </Dialog>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-slate-500">
+                Para exibir imagens aqui, cadastre evidências em <span className="font-medium text-slate-700">projectEvidence</span> e coloque os arquivos em <span className="font-medium text-slate-700">public/mock/</span>.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Progresso da construção</CardTitle>
-            <CardDescription>Comparativo entre avanço realizado e estimado</CardDescription>
+            <CardTitle>{showCaptureProgress ? "Progresso da captação" : "Progresso da construção"}</CardTitle>
+            <CardDescription>{showCaptureProgress ? "Comparativo entre valor captado e meta" : "Comparativo entre avanço realizado e estimado"}</CardDescription>
           </CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={progressChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => (showCaptureProgress ? `R$ ${Math.round(Number(value) / 1000000)} mi` : String(value))} />
                 <Tooltip />
-                <Line type="monotone" dataKey="realizado" name="Realizado" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="estimado" name="Estimado" stroke="#f59e0b" strokeWidth={3} strokeDasharray="6 6" dot={{ r: 4 }} />
+                {showCaptureProgress ? (
+                  <>
+                    <Line type="monotone" dataKey="captado" name="Captado" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="meta" name="Meta" stroke="#f59e0b" strokeWidth={3} strokeDasharray="6 6" dot={{ r: 4 }} />
+                  </>
+                ) : (
+                  <>
+                    <Line type="monotone" dataKey="realizado" name="Realizado" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="estimado" name="Estimado" stroke="#f59e0b" strokeWidth={3} strokeDasharray="6 6" dot={{ r: 4 }} />
+                  </>
+                )}
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle>Linha do tempo</CardTitle>
-            <CardDescription>Fotos, relatórios, observações e datas</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {monitoringEvents.map((event) => (
-              <div key={`${event.date}-${event.type}`} className="flex gap-3 rounded-lg border p-4">
-                <div className="mt-1 flex size-9 items-center justify-center rounded-md bg-blue-50 text-blue-700">
-                  <FileText className="size-4" />
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{event.type}</span>
-                    <Badge variant="outline">{event.date}</Badge>
+        {hasConstructionStarted ? (
+          <Card className="rounded-lg">
+            <CardHeader>
+              <CardTitle>Linha do tempo</CardTitle>
+              <CardDescription>Fotos, relatórios, observações e datas</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {monitoringEvents.map((event) => (
+                <div key={`${event.date}-${event.type}`} className="flex gap-3 rounded-lg border p-4">
+                  <div className="mt-1 flex size-9 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+                    <FileText className="size-4" />
                   </div>
-                  <p className="mt-1 text-sm text-slate-500">{event.note}</p>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{event.type}</span>
+                      <Badge variant="outline">{event.date}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">{event.note}</p>
+                  </div>
                 </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="rounded-lg">
+            <CardHeader>
+              <CardTitle>Linha do tempo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border border-dashed bg-slate-50 p-6 text-sm text-slate-500">
+                A obra ainda não foi iniciada para este projeto.
               </div>
-            ))}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -1452,11 +1783,13 @@ function ReportsView({
   avgApproval,
   categoryData,
   pendingDocuments,
+  projects,
   statusData,
 }: {
   avgApproval: number;
   categoryData: { name: string; value: number }[];
   pendingDocuments: number;
+  projects: Project[];
   statusData: { name: string; value: number }[];
 }) {
   return (
