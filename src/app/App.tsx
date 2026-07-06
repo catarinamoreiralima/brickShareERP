@@ -770,6 +770,14 @@ function App() {
     setActiveView(view);
   }
 
+  function openProjectsWithFilters(filters: { status?: string; category?: string } = {}) {
+    setQuery("");
+    setStatusFilter(filters.status ?? "Todos");
+    setCategoryFilter(filters.category ?? "Todas");
+    setOwnerFilter("Todos");
+    setActiveView("projects");
+  }
+
   function createProject(project: Omit<Project, "id">) {
     const newProject = {
       ...project,
@@ -893,8 +901,7 @@ function App() {
               projects={projectList}
               statusData={statusData}
               onOpenProjects={(status) => {
-                setStatusFilter(status);
-                setActiveView("projects");
+                openProjectsWithFilters({ status });
               }}
             />
           )}
@@ -932,6 +939,9 @@ function App() {
               pendingDocuments={pendingDocuments}
               projects={projectList}
               statusData={statusData}
+              onOpenAllProjects={() => openProjectsWithFilters()}
+              onOpenCategory={(category) => openProjectsWithFilters({ category })}
+              onOpenStatus={(status) => openProjectsWithFilters({ status })}
             />
           )}
           {activeView === "users" && <UsersView />}
@@ -1782,12 +1792,18 @@ function MonitoringView({
 function ReportsView({
   avgApproval,
   categoryData,
+  onOpenAllProjects,
+  onOpenCategory,
+  onOpenStatus,
   pendingDocuments,
   projects,
   statusData,
 }: {
   avgApproval: number;
   categoryData: { name: string; value: number }[];
+  onOpenAllProjects: () => void;
+  onOpenCategory: (category: string) => void;
+  onOpenStatus: (status: string) => void;
   pendingDocuments: number;
   projects: Project[];
   statusData: { name: string; value: number }[];
@@ -1810,14 +1826,14 @@ function ReportsView({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MiniMetric label="Tempo médio de análise" value={`${avgApproval} dias`} icon={Clock3} />
-        <MiniMetric label="Projetos ativos" value={String(projects.length)} icon={FolderKanban} />
-        <MiniMetric label="Projetos atrasados" value={String(projects.filter((project) => project.status === "Atrasado").length)} icon={AlertTriangle} />
+        <MiniMetric label="Projetos ativos" value={String(projects.length)} icon={FolderKanban} onClick={onOpenAllProjects} />
+        <MiniMetric label="Projetos atrasados" value={String(projects.filter((project) => project.status === "Atrasado").length)} icon={AlertTriangle} onClick={() => onOpenStatus("Atrasado")} />
         <MiniMetric label="Documentos pendentes" value={String(pendingDocuments)} icon={FileText} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <ReportChart title="Projetos por categoria" data={categoryData} />
-        <ReportChart title="Projetos por status" data={statusData} />
+        <ReportChart title="Projetos por categoria" data={categoryData} onBarClick={onOpenCategory} />
+        <ReportChart title="Projetos por status" data={statusData} onBarClick={onOpenStatus} />
         <Card className="rounded-lg">
           <CardHeader>
             <CardTitle>Evolução mensal de aprovações</CardTitle>
@@ -1839,7 +1855,23 @@ function ReportsView({
   );
 }
 
-function ReportChart({ title, data }: { title: string; data: { name: string; value: number }[] }) {
+function ReportChart({
+  title,
+  data,
+  onBarClick,
+}: {
+  title: string;
+  data: { name: string; value: number }[];
+  onBarClick?: (name: string) => void;
+}) {
+  function handleBarClick(entry: unknown) {
+    const name = (entry as { payload?: { name?: string } }).payload?.name;
+
+    if (name) {
+      onBarClick?.(name);
+    }
+  }
+
   return (
     <Card className="rounded-lg">
       <CardHeader>
@@ -1852,7 +1884,13 @@ function ReportChart({ title, data }: { title: string; data: { name: string; val
             <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} angle={-22} textAnchor="end" height={70} />
             <YAxis tickLine={false} axisLine={false} />
             <Tooltip />
-            <Bar dataKey="value" fill="#2563eb" radius={[6, 6, 0, 0]} />
+            <Bar
+              dataKey="value"
+              fill="#2563eb"
+              radius={[6, 6, 0, 0]}
+              className={onBarClick ? "cursor-pointer" : undefined}
+              onClick={handleBarClick}
+            />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
