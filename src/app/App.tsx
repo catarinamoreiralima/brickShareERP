@@ -815,7 +815,7 @@ function App() {
             <Building2 className="size-5" />
           </div>
           <div>
-            <div className="font-semibold">BrickShare ERP</div>
+            <div className="font-semibold">BrickCore</div>
             <div className="text-xs text-slate-500">Crowdfunding imobiliário</div>
           </div>
         </div>
