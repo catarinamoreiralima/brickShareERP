@@ -981,7 +981,7 @@ function Dashboard({
                     <Cell key={index} fill={chartColors[index % chartColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => (showCaptureProgress ? formatCurrency(Number(value)) : `${value}%`)} />
+                <Tooltip formatter={(value) => [`${value} projeto(s)`, "Total"]} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -1663,8 +1663,8 @@ function MonitoringView({
             <CardTitle>Evidências da obra</CardTitle>
             <CardDescription>
               {evidence.length > 0
-                ? "Imagens mockadas do projeto selecionado"
-                : "Nenhuma imagem mockada cadastrada para este projeto"}
+                ? "Imagens do projeto selecionado"
+                : "Nenhuma imagem cadastrada para este projeto"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1912,14 +1912,15 @@ function UsersView() {
 }
 
 function SettingsView() {
+  const settingsCards = [
+    ["Fluxos de aprovação", "Defina responsáveis, SLA e regras por categoria de projeto.", ShieldCheck],
+    ["Notificações", "Configure alertas de documentos, obras e etapas jurídicas.", Bell],
+    ["Preferências do workspace", "Ajuste identidade, permissões e integrações do ERP.", Settings],
+  ] as const;
+
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      {[
-        ["Fluxos de aprovação", "Defina responsáveis, SLA e regras por categoria de projeto.", ShieldCheck],
-        ["Notificações", "Configure alertas de documentos, obras e etapas jurídicas.", Bell],
-        ["Preferências do workspace", "Ajuste identidade, permissões e integrações do ERP.", Settings],
-      ].map(([title, description, Icon]) => {
-        const IconComponent = Icon as typeof Settings;
+      {settingsCards.map(([title, description, IconComponent]) => {
         return (
           <Card key={String(title)} className="rounded-lg">
             <CardHeader>
