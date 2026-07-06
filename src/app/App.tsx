@@ -625,6 +625,7 @@ const statusColors: Record<string, string> = {
 };
 
 const chartColors = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#6366f1", "#64748b"];
+const logoSrc = "/mock/logo/logo.png";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -811,8 +812,8 @@ function App() {
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r bg-white lg:flex lg:flex-col">
         <div className="flex h-16 items-center gap-3 border-b px-5">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-blue-700 text-white">
-            <Building2 className="size-5" />
+          <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg border bg-white">
+            <img src={logoSrc} alt="BrickShare" className="size-full object-cover" />
           </div>
           <div>
             <div className="font-semibold">BrickCore</div>
